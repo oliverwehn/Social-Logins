@@ -1,0 +1,155 @@
+<?php
+
+/**
+ * ProcessWire Social Login Provider Process
+ *
+ * Provides capability for users to sign in with Twitter 
+ * 
+ * For more details about how Process modules work, please see: 
+ * /wire/core/Process.php 
+ * 
+ * ProcessWire 2.2  
+ * Copyright (C) 2012 by Oliver Wehn 
+ * Licensed under GNU/GPL v2
+ * 
+ * http://www.processwire.com
+ * http://www.oliverwehn.com
+ *
+ */
+require_once(dirname(__FILE__) . '/InterfaceSocialLoginProvider.php');
+
+class ProcessSocialLoginProviderDefault extends Process implements ConfigurableModule, InterfaceSocialLoginProvider {
+
+	protected $providerName = "Default";
+
+	public static function getModuleInfo() {
+		return array(
+			'title' => 'Social Login Provider: Default',          
+			'summary' => 'ProcessWire user login', 
+			'version' => 001, 
+			'permission' => 'page-view',
+			'singular' => true,
+			'requires' => array('ProcessSocialLoginManager', 'ProcessSocialLogin'),
+			);
+	}
+
+	/**
+	 * Init module 
+	 *
+	 */
+	public function init() {
+		$method = 'execute'.strtoupper($this->providerName[0]).strtolower(substr($this->providerName, 1, strlen($this->providerName)-1));
+		$this->addHook('ProcessSocialLogin::___execute'.$this->providerName, $this, '___executeLogin');
+		return parent::init();
+	}
+	
+	/**
+	 * Extend login form
+	 */
+	public function extendLoginForm(&$form) {
+		if($form instanceof InputfieldWrapper) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	/**
+	 * Check if login posted and attempt login, otherwise render the login form
+	 *
+	 */
+	public function ___execute() {
+
+	}
+	
+	/**
+	 * Perform login
+	 */
+	public function ___executeLogin() {
+		if($this->input->post->login_name && $this->input->post->login_pass)
+		 /**
+		 * Sanitize input
+		 */
+		$name = $this->fuel('sanitizer')->username($this->input->post->login_name); 
+		$pass = substr($this->input->post->login_pass, 0, 50); 
+		
+		/**
+		 * Process and try to log in
+		 */
+		if($this->fuel('session')->login($name, $pass)) {
+			/**
+			 * Successfully logged in
+			 */
+			return true;  
+		} else {
+			/**
+			 *  Login failed
+			 */
+			return false; 
+		}
+	}
+	
+	/**
+	 * Provide login module specific config fields
+	 */
+	public function getConfigFields() {
+		return false;
+	}
+
+	/**
+	 * Provide roles for users created within this login process
+	 */	
+	public function getUserRoles() {
+		$roles = new PageArray();
+		if(is_array($this->user_roles)) {
+			foreach($this->user_roles as $user_role) {
+				$roles->add($this->roles->get($user_role));
+			}
+		} else {
+			$user_role = 0;
+			if(($user_role = $this->roles->get($this->user_roles)) && ($user_role->id)) {
+				$roles->add($user_role);
+			}
+		}
+		return $roles;
+	}
+	
+	public static function getModuleConfigInputfields(array $data) { }
+	
+	public function ___install() {
+		parent::___install();
+		/**
+		 * Create manager page in backend
+		 */
+		$adminPage = $this->fuel('pages')->get($this->config->adminRootPageID); 
+		$socialloginPage = $adminPage->child("name=setup")->child("name=sociallogin"); 
+		if(!$socialloginPage->id) throw new WireException("Unable to locate {$adminPage->path}setup/sociallogin"); 
+		
+		$config = array(
+			'user_roles' => $this->roles->get('guest')
+		);
+		$this->modules->saveModuleConfigData($this, $config);
+		
+		$provider = new Page($this->templates->get('admin'));
+		$provider->parent = $socialloginPage;
+		$provider->process = $this->modules->get('ProcessSocialLogin'.$this->providerName);
+		$provider->title = $this->providerName;
+		$provider->name = strtolower($this->providerName);
+		$provider->save();
+	}
+
+	public function ___uninstall() {
+		$adminPage = $this->fuel('pages')->get($this->config->adminRootPageID); 
+		$socialloginPage = $adminPage->child("name=setup")->child("name=sociallogin"); 
+		if(!$socialloginPage->id) throw new WireException("Unable to locate {$adminPage->path}setup/sociallogin");
+		$provider = $socialloginPage->child('name='.strtolower($this->providerName)); 
+		if($provider->id) {
+			$provider->status = Page::statusSystemOverride;
+			$provider->save();
+		
+			$this->pages->delete($provider);
+		}
+		parent::___uninstall();
+	}
+}
+
