@@ -16,9 +16,9 @@
  * http://www.oliverwehn.com
  *
  */
-require_once(dirname(__FILE__) . '/InterfaceSocialLoginProvider.php'); 
- 
-class ProcessSocialLoginProviderTwitter extends Process implements ConfigurableModule, InterfaceSocialLoginProvider {
+require_once(dirname(__FILE__) . '/AbstractSocialLoginProvider.php');
+
+class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProvider {
 
 	protected $providerName = "Twitter";
 
@@ -91,25 +91,27 @@ class ProcessSocialLoginProviderTwitter extends Process implements ConfigurableM
 	 * Provide login module specific config fields
 	 */
 	public function getConfigFields() {
-		$fields = array();
+		$fields = new InputfieldWrapper();
 		// consumer key
 		$field = $this->modules->get('InputfieldText');
 		$field->name = 'config_consumer_key';
 		$field->label = $this->_('Twitter Consumer Key');
 		$field->description = $this->_('Enter the consumer key you got for your site from dev.twitter.com');
 		$field->value = $this->consumer_key;
-		$fields[] = $field;
+		$fields->add($field);
 		// consumer secret
 		$field = $this->modules->get('InputfieldText');
 		$field->name = 'config_consumer_secret';
 		$field->label = $this->_('Twitter Consumer Secret');
 		$field->description = $this->_('Enter the consumer secret you got for your site from dev.twitter.com');
 		$field->value = $this->consumer_secret;
-		$fields[] = $field;
+		$fields->add($field);
 		return $fields;
 	}	
 	
-	public static function getModuleConfigInputfields(array $data) { }
+	public static function getModuleConfigInputfields(array $data) {
+		return new InputfieldWrapper();
+	}
 	
 	public function ___install() {
 		parent::___install();

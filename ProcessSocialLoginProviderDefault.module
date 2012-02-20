@@ -16,9 +16,9 @@
  * http://www.oliverwehn.com
  *
  */
-require_once(dirname(__FILE__) . '/InterfaceSocialLoginProvider.php');
+require_once(dirname(__FILE__) . '/AbstractSocialLoginProvider.php');
 
-class ProcessSocialLoginProviderDefault extends Process implements ConfigurableModule, InterfaceSocialLoginProvider {
+class ProcessSocialLoginProviderDefault extends AbstractSocialLoginProvider {
 
 	protected $providerName = "Default";
 
@@ -94,24 +94,6 @@ class ProcessSocialLoginProviderDefault extends Process implements ConfigurableM
 	 */
 	public function getConfigFields() {
 		return false;
-	}
-
-	/**
-	 * Provide roles for users created within this login process
-	 */	
-	public function getUserRoles() {
-		$roles = new PageArray();
-		if(is_array($this->user_roles)) {
-			foreach($this->user_roles as $user_role) {
-				$roles->add($this->roles->get($user_role));
-			}
-		} else {
-			$user_role = 0;
-			if(($user_role = $this->roles->get($this->user_roles)) && ($user_role->id)) {
-				$roles->add($user_role);
-			}
-		}
-		return $roles;
 	}
 	
 	public static function getModuleConfigInputfields(array $data) { }
