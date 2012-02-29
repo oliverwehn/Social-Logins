@@ -51,6 +51,7 @@ class ProcessSocialLogin extends Process {
 		$segment = $this->input->urlSegment(1);
 		if($segment || $this->input->post->login_submit) {
 			$method = '___execute'.(strlen($segment)?strtoupper($segment[0]).strtolower(substr($segment, 1, strlen($segment)-1)):"Default");
+            
 			try {
 				$ok = $this->$method();
 			}  catch(Wire404Exception $e) {
@@ -58,9 +59,10 @@ class ProcessSocialLogin extends Process {
 			}
 			if($ok) {
 				// Success page
-				
+				//die("yes");
 			} else {
 				// Error page
+				//die("no");
 			}
 		} else {
 			/**
@@ -186,7 +188,8 @@ class ProcessSocialLogin extends Process {
 	protected function ___afterLoginRedirect() {
 		$this->session->redirect($this->pages->get($this->config->adminRootPageID)->url);
 	}
-	
+		
+		
 	public function ___install() {
 		return parent::___install();		
 	}

@@ -18,9 +18,16 @@
  */
 require_once(dirname(__FILE__) . '/AbstractSocialLoginProvider.php');
 
-class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProvider {
-
+class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
 	protected $providerName = "Twitter";
+    protected $twitter_host = 'https://api.twitter.com/1/';
+    protected $urls = array(
+        'accessToken' => 'https://api.twitter.com/oauth/access_token',
+        'authenticate' => 'https://api.twitter.com/oauth/access_token',
+        'authorize' => 'https://api.twitter.com/oauth/authorize',
+        'requestToken' => 'https://api.twitter.com/oauth/request_token'
+        );
+    var $token = array();
 
 	public static function getModuleInfo() {
 		return array(
@@ -48,14 +55,32 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProvider {
 	 *
 	 */
 	public function ___execute() {
-
+        echo "jein";
 	}
 	
 	/**
 	 * Perform login
 	 */
 	public function ___executeLogin() {
-		echo "Yeah!";
+		if(!empty($this->consumer_key) && !empty($this->consumer_secret)) {
+		    if(!isset($this->token['oauth_token']) || !isset($this->token['oauth_token_secret'])) {
+		        $request_token = $this->_twitterRequestToken('http://'.$_SERVER['SERVER_NAME'].$_SERVER['REQUEST_URI']);
+		        echo "(".$request_token.")";
+                if($this->http_info['code'] == 200) {
+                    $this->token['oauth_token'] = $request_token['oauth_token'];
+                    $this->token['oauth_token'] = $request_token['oauth_token_secret'];
+                    $_SESSION['token'] = $this->token;
+                    //print_r($this->token);
+                    header('Location: '.$this->urls['authenticate'].'?oauth_token='.$request_token['oauth_token']);
+                } else {
+                    echo "geht nicht";
+                }
+	        } else {
+                echo "nš";
+	        }
+		} else {
+		    throw new WireException('SocialLoginProviderTwitter: Module wasnÕt properly configured.');
+		}
 	}
 	
 	/**
@@ -112,6 +137,138 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProvider {
 	public static function getModuleConfigInputfields(array $data) {
 		return new InputfieldWrapper();
 	}
+    
+    /**
+     *  Provider related methods
+     */
+    private function _twitterGetSignature($base_string) {
+        $parts = array(
+            $this->consumer_secret,
+            (isset($this->token['oauth_token_secret'])) ? $this->token['oauth_token_secret'] : '',
+        );
+        
+        $parts = $this->urlEncode($parts);
+        $secret = implode('&', $parts);
+        return base64_encode(hash_hmac('sha1', $base_string, $secret, true));
+         
+        //$signature = $this->urlEncode(base64_encode(hash_hmac('sha1', $base_string, $this->urlEncode($this->consumer_secret).'&', TRUE)));
+        //return $signature;
+    }
+    private function _twitterGetBaseString($url, $method, $data) {
+        //$base_string = $this->urlEncode(implode('&', array(strtoupper($method), $this->normalizeUrl($url), $this->buildQueryString($data))));
+        //$base_string = strtoupper($method).'&'.$this->normalizeUrl($url).'&'.$this->buildQueryString($data);
+        $parts = array(
+            strtoupper($method),
+            $this->normalizeUrl($url),
+            count($data)?$this->buildQueryString($data):null
+        );
+        $parts = $this->urlEncode($parts);
+        $base_string = implode("&", $parts);
+        return $base_string;
+    }
+    
+    private function _twitterGetOAuthHeader($url, $method, $query=array(), $callback_url='oob') {
+        $header = "Authorization: OAuth ";
+        $header_parts = array( 
+            'oauth_consumer_key' => $this->consumer_key,
+            'oauth_nonce' => md5(microtime() . mt_rand()),
+            'oauth_signature_method' => 'HMAC-SHA1',                
+            'oauth_signature' => '',
+            'oauth_timestamp' => time(),
+            'oauth_version' => '1.0',
+            'oauth_callback' => $callback_url
+            );
+        if(isset($this->token['oauth_token'])) {
+            $header_parts['oauth_token'] = $this->token['oauth_token'];
+        } else {
+            //$header_parts['oauth_token'] = '';
+        }
+        $base_string = $this->_twitterGetBaseString($url, $method, $query);//count($query)?array_merge($header_parts, $query):$header_parts);
+        echo $base_string;
+        $header_parts['oauth_signature'] = $this->_twitterGetSignature($base_string);
+        foreach($header_parts as $param => $value) { 
+            $header .= $param.'="'.$this->urlEncode($value).'", ';
+        }
+        $header = substr($header, 0, strlen($header)-2);
+        return stripslashes($header);        
+    }
+    
+    private function _twitterRequestToken($callback_url) {
+        $query = array();
+        $response = $this->_twitterOAuthRequest($this->urls['requestToken'], 'GET', $query, $callback_url);
+        echo "<pre>";
+        print_r($this->http_info);
+        echo "<br />";
+        $token = $this->parseParameters($response);
+        $this->token = array('oauth_token' => $token['oauth_token'], 'oauth_token_secret' => $token['oauth_token_secret']);
+        return $token;
+    }
+    
+    private function _twitterFormatRequest($url) {
+        if (strrpos($url, 'https://') !== 0 && strrpos($url, 'http://') !== 0) {
+            $url = "{$this->twitter_host}{$url}.json";
+        }        
+        return $url;    
+    } 
+    
+    private function _twitterOAuthRequest($url, $method, $query, $callback_url='oob') {
+        $url = $this->_twitterFormatRequest($url);
+        $oauth_header = $this->_twitterGetOAuthHeader($url, $method, $query, $callback_url);
+        /*
+        $parameters = array_merge(
+            array("oauth_version" => '1.0',
+                          "oauth_nonce" => md5(microtime() . mt_rand()),
+                          "oauth_timestamp" => time(),
+                          "oauth_consumer_key" => $this->consumer_key,
+                          "oauth_signature_method" => 'HMAC-SHA1'
+                          ),
+            $parameters
+        );
+         
+        if (isset($this->token['oauth_token'])) {
+            $parameters['oauth_token'] = $this->token['oauth_token'];
+        }
+        
+        $parameters["oauth_signature"] = $this->_twitterGetSignature($this->_twitterGetBaseString($url, $method, $parameters));
+        */
+        echo "<pre>";
+        // set additional curl options
+        $options = array();
+        
+        switch($method) {
+            case 'POST': {
+                $options = array(
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => count($query)?$this->buildQueryString($query):null
+                    );
+                break;
+            }
+            case 'DELETE': {
+                $options = array(
+                    CURLOPT_CUSTOMREQUEST => 'DELETE'
+                    );
+                if (!empty($query)) {
+                  $url = $url."?".$this->buildQueryString($query);
+                }
+                break;
+            }
+            case 'GET': {
+                $options = array(
+                    CURLOPT_POST => true
+                );
+                if (count($query)) {
+                    $url = $url."?".$this->buildQueryString($parameters);
+                }
+                break;
+            }
+           
+        }      
+        $options[CURLOPT_VERBOSE] = true;
+        return $this->http($url, null, $options, array($oauth_header));
+        //return $this->http_req($url, null);
+    }
+         
+    
 	
 	public function ___install() {
 		parent::___install();
