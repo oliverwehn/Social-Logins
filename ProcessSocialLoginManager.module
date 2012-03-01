@@ -183,19 +183,20 @@ class ProcessSocialLoginManager extends ProcessPageType {
 	}
 	
 	public function ___install() {
-		
-		parent::___install();
+		// $this->___uninstall();
+		//parent::___install();
 		$configData = array();
 		
 		/**
 		 * Create login template
 		 */
 		// create sociallogin_process field
-		$field = $this->modules->get('FieldtypeModule');
+		$field = new Field();
+        $field->type = $this->modules->get('FieldtypeModule');
 		$field->name = 'sociallogin_process';
 		$field->label = 'Login Process';
 		$field->description = 'Stores the login process';
-		$field->flags = 0;
+		$field->flags = Field::flagSystem;
 		$field->save();
 		
 		// create the fieldgroup to be used by the language template
@@ -212,7 +213,8 @@ class ProcessSocialLoginManager extends ProcessPageType {
 		$template->slashUrls = 1; 
 		$template->pageLabelField = 'name';
 		$template->nameContentTab = 1; 
-		$template->flags = Template::flagSystem; 
+		$template->flags = Template::flagSystem;
+        $template->allowUrlSegments = 1; 
 		$template->save();
 		$this->message("Created Template: sociallogin");
 		
@@ -247,9 +249,7 @@ class ProcessSocialLoginManager extends ProcessPageType {
 		$configData['socialloginPageID'] = $manager->id; 
 
 		$this->message("Social Login Installed! Click to the 'Setup' menu to manage Social Login Providers.");
-		if($default = $this->modules->get('ProcessSocialLoginProviderDefault')) {
-			$default->___install();
-		} 
+		$default = $this->modules->get('ProcessSocialLoginProviderDefault');
 
 	}
 	
@@ -258,16 +258,38 @@ class ProcessSocialLoginManager extends ProcessPageType {
 		 * Remove manager page in backend
 		 */
 		$adminPage = $this->fuel('pages')->get($this->config->adminRootPageID); 
-		$setupPage = $adminPage->child("name=setup")->child('name=sociallogin'); 
-		if(!$setupPage->id) throw new WireException("Unable to locate {$adminPage->path}setup/sociallogin/");
-		$this->pages->delete($setupPage, true); 				
-		
-		$this->modules->uninstall($this->modules->get('ProcessSocialLogin'));		
-		$this->pages->delete($this->pages->get('template=sociallogin'));
-		$template = $this->templates->get('social_login');
-		$template->flags = Template::flagSystemOverride;
-		$template->save();
-		$this->templates->delete($template);
+		$manager = $adminPage->child("name=setup")->child('name=sociallogin'); 
+		if($manager->id) { //throw new WireException("Unable to locate {$adminPage->path}setup/sociallogin/");
+            $manager->status = Page::statusSystemOverride;
+            $manager->status = 0;
+            $manager->save();
+    		$this->pages->delete($manager, true); 				
+        }
+		$this->modules->uninstall($this->modules->get('ProcessSocialLogin'));
+        $login = $this->pages->get('template=sociallogin');
+        if($login->id) {
+            $login->status = Page::statusSystemOverride;
+            $login->status = 0;
+            $login->save();
+            $this->pages->delete($login);
+        }
+		$template = $this->templates->get('sociallogin');
+        if($template->id) {
+    		$template->flags = Template::flagSystemOverride;
+            $template->flags = 0;
+    		$template->save();
+            $temp_name = $template->name;
+    		$this->templates->delete($template);
+            $this->fieldgroups->delete($this->fieldgroups->get($temp_name));
+        }
+        
+        $field = $this->fields->get('sociallogin_process');
+        if($field->name) {
+            $field->flags = Field::flagSystemOverride;
+            $field->flags = 0;
+            $field->save();
+	        $this->fields->delete($field);
+        }
 		
 		return parent::___uninstall();
 	}

@@ -144,7 +144,7 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
     private function _twitterGetSignature($base_string) {
         $parts = array(
             $this->consumer_secret,
-            (isset($this->token['oauth_token_secret'])) ? $this->token['oauth_token_secret'] : '',
+            (isset($this->token['oauth_token_secret'])) ? $this->token['oauth_token_secret'] : ""
         );
         
         $parts = $this->urlEncode($parts);
@@ -154,28 +154,32 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
         //$signature = $this->urlEncode(base64_encode(hash_hmac('sha1', $base_string, $this->urlEncode($this->consumer_secret).'&', TRUE)));
         //return $signature;
     }
-    private function _twitterGetBaseString($url, $method, $data) {
+    private function _twitterGetBaseString($url, $method, $query) {
         //$base_string = $this->urlEncode(implode('&', array(strtoupper($method), $this->normalizeUrl($url), $this->buildQueryString($data))));
         //$base_string = strtoupper($method).'&'.$this->normalizeUrl($url).'&'.$this->buildQueryString($data);
+        if (isset($query['oauth_signature'])) {
+            unset($query['oauth_signature']);
+        }
+
         $parts = array(
             strtoupper($method),
             $this->normalizeUrl($url),
-            count($data)?$this->buildQueryString($data):null
+            count($query)?$this->buildQueryString($query):null
         );
         $parts = $this->urlEncode($parts);
         $base_string = implode("&", $parts);
         return $base_string;
     }
     
-    private function _twitterGetOAuthHeader($url, $method, $query=array(), $callback_url='oob') {
+    private function _twitterGetOAuthHeader($url, $method, $query=array(), $callback_url="oob") {
         $header = "Authorization: OAuth ";
         $header_parts = array( 
             'oauth_consumer_key' => $this->consumer_key,
             'oauth_nonce' => md5(microtime() . mt_rand()),
-            'oauth_signature_method' => 'HMAC-SHA1',                
-            'oauth_signature' => '',
+            'oauth_signature_method' => "HMAC-SHA1",                
+            'oauth_signature' => "",
             'oauth_timestamp' => time(),
-            'oauth_version' => '1.0',
+            'oauth_version' => "1.0",
             'oauth_callback' => $callback_url
             );
         if(isset($this->token['oauth_token'])) {
@@ -183,11 +187,11 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
         } else {
             //$header_parts['oauth_token'] = '';
         }
-        $base_string = $this->_twitterGetBaseString($url, $method, $query);//count($query)?array_merge($header_parts, $query):$header_parts);
+        $base_string = $this->_twitterGetBaseString($url, $method, $query); //  count($query)?array_merge($header_parts, $query):$header_parts);
         echo $base_string;
         $header_parts['oauth_signature'] = $this->_twitterGetSignature($base_string);
         foreach($header_parts as $param => $value) { 
-            $header .= $param.'="'.$this->urlEncode($value).'", ';
+            $header .= $param."=\"".$this->urlEncode($value)."\", ";
         }
         $header = substr($header, 0, strlen($header)-2);
         return stripslashes($header);        
@@ -205,41 +209,44 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
     }
     
     private function _twitterFormatRequest($url) {
-        if (strrpos($url, 'https://') !== 0 && strrpos($url, 'http://') !== 0) {
+        if (strrpos($url, "https://") !== 0 && strrpos($url, "http://") !== 0) {
             $url = "{$this->twitter_host}{$url}.json";
         }        
         return $url;    
     } 
     
-    private function _twitterOAuthRequest($url, $method, $query, $callback_url='oob') {
+    private function _twitterOAuthRequest($url, $method, $query, $callback_url="oob") {
         $url = $this->_twitterFormatRequest($url);
-        $oauth_header = $this->_twitterGetOAuthHeader($url, $method, $query, $callback_url);
-        /*
-        $parameters = array_merge(
-            array("oauth_version" => '1.0',
+        //$oauth_header = $this->_twitterGetOAuthHeader($url, $method, $query, $callback_url);
+        
+        $query = array_merge(
+            array("oauth_version" => "1.0",
                           "oauth_nonce" => md5(microtime() . mt_rand()),
                           "oauth_timestamp" => time(),
                           "oauth_consumer_key" => $this->consumer_key,
-                          "oauth_signature_method" => 'HMAC-SHA1'
+                          "oauth_signature_method" => "HMAC-SHA1"
                           ),
-            $parameters
+            $query
         );
          
         if (isset($this->token['oauth_token'])) {
-            $parameters['oauth_token'] = $this->token['oauth_token'];
+            $query['oauth_token'] = $this->token['oauth_token'];
         }
-        
-        $parameters["oauth_signature"] = $this->_twitterGetSignature($this->_twitterGetBaseString($url, $method, $parameters));
-        */
+        $base_string = $this->_twitterGetBaseString($url, $method, $query);
+        $query["oauth_signature"] = $this->_twitterGetSignature($base_string);
+        echo $query["oauth_signature"]."<br />";
         echo "<pre>";
+        echo $base_string."<br />\n";
         // set additional curl options
-        $options = array();
+        $options = array(
+            CURLOPT_USERAGENT => $this->className()
+        );
         
         switch($method) {
             case 'POST': {
                 $options = array(
                     CURLOPT_POST => true,
-                    CURLOPT_POSTFIELDS => count($query)?$this->buildQueryString($query):null
+                    CURLOPT_POSTFIELDS => count($query)?$this->buildQueryString($query):''
                     );
                 break;
             }
@@ -254,17 +261,20 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
             }
             case 'GET': {
                 $options = array(
-                    CURLOPT_POST => true
+                    CURLOPT_POST => false
                 );
                 if (count($query)) {
-                    $url = $url."?".$this->buildQueryString($parameters);
+                    $url = $url."?".$this->buildQueryString($query);
                 }
                 break;
             }
            
-        }      
+        } 
+        echo $url."<br />";
+        echo date('D, d M Y, H:i:s T', time())."<br />";
         $options[CURLOPT_VERBOSE] = true;
-        return $this->http($url, null, $options, array($oauth_header));
+        return $this->http($url, null, $options, array());
+        //return $this->http($url, null, $options, array($oauth_header));
         //return $this->http_req($url, null);
     }
          

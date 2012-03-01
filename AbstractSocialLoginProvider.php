@@ -66,8 +66,9 @@ abstract class AbstractSocialLoginProviderAPI extends AbstractSocialLoginProvide
        
         /* Curl settings */
         $default_headers = array(
-            'Expect:', 
-           // 'Content-Type: application/x-www-form-urlencoded'
+            'Expect:'
+            //'Content-Type: application/x-www-form-urlencoded',
+            //'Accept: /'
             );
         if(is_array($headers)) {
             $headers = array_merge($default_headers, $headers);
@@ -77,15 +78,14 @@ abstract class AbstractSocialLoginProviderAPI extends AbstractSocialLoginProvide
         print_r($headers);
       
         $defaults = array(
-            CURLOPT_USERAGENT => 'SocialLoginProvider',
+            CURLOPT_USERAGENT => "SocialLoginProvider",
             CURLOPT_CONNECTTIMEOUT => 30,
             CURLOPT_TIMEOUT => 30,
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_SSL_VERIFYPEER => FALSE,
             CURLOPT_RETURNTRANSFER => TRUE,
             CURLOPT_HEADERFUNCTION => array($this, 'getHeader'),
-            CURLOPT_HEADER => FALSE,
-            CURLOPT_POST => 0,            
+            CURLOPT_HEADER => FALSE,      
             CURLOPT_POSTFIELDS => ''
         );
         foreach($defaults as $index=>$option) {
@@ -101,8 +101,8 @@ abstract class AbstractSocialLoginProviderAPI extends AbstractSocialLoginProvide
             if(is_array($data)) {
                 $data = $this->buildQueryString($data);
             }
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+            curl_setopt($ci, CURLOPT_POST, 1);
+            curl_setopt($ci, CURLOPT_POSTFIELDS, $data);
         }        
         
         curl_setopt($ci, CURLOPT_URL, $url);
@@ -241,9 +241,9 @@ abstract class AbstractSocialLoginProviderAPI extends AbstractSocialLoginProvide
         if (is_array($data)) {
             return array_map(array($this, 'urlEncode'), $data);
         } else if (is_scalar($data)) {
-            return str_replace('+', ' ', str_replace('%7E', '~', rawurlencode($data)));
+            return str_replace("+", " ", str_replace("%7E", "~", rawurlencode($data)));
         } else {
-            return '';
+            return "";
         }
     }
     public function urlDecode($string) {
