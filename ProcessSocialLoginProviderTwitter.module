@@ -23,7 +23,7 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
     protected $twitter_host = 'https://api.twitter.com/1/';
     protected $urls = array(
         'accessToken' => 'https://api.twitter.com/oauth/access_token',
-        'authenticate' => 'https://api.twitter.com/oauth/access_token',
+        'authenticate' => 'https://api.twitter.com/oauth/authenticate',
         'authorize' => 'https://api.twitter.com/oauth/authorize',
         'requestToken' => 'https://api.twitter.com/oauth/request_token'
         );
@@ -46,6 +46,13 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
 	 */
 	public function init() {
 		$method = 'execute'.strtoupper($this->providerName[0]).strtolower(substr($this->providerName, 1, strlen($this->providerName)-1));
+        if(isset($this->input->get['oauth_token'])) {
+            $this->token['oauth_token'] = $this->input->get['oauth_token']?$this->input->get['oauth_token']:NULL;
+            $this->token['oauth_token_secret'] = $this->input->get['oauth_token_secret']?$this->input->get['oauth_token_secret']:NULL;
+            $this->token['oauth_verifier'] = $this->input->get['oauth_verifier']?$this->input->get['oauth_verifier']:NULL;
+        } else {
+            
+        }
 		$this->addHook('ProcessSocialLogin::___execute'.$this->providerName, $this, '___executeLogin');
 		return parent::init();
 	}
@@ -63,23 +70,45 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
 	 */
 	public function ___executeLogin() {
 		if(!empty($this->consumer_key) && !empty($this->consumer_secret)) {
-		    if(!isset($this->token['oauth_token']) || !isset($this->token['oauth_token_secret'])) {
-		        $request_token = $this->_twitterRequestToken('http://'.$_SERVER['SERVER_NAME'].$_SERVER['REQUEST_URI']);
-		        echo "(".$request_token.")";
-                if($this->http_info['code'] == 200) {
-                    $this->token['oauth_token'] = $request_token['oauth_token'];
-                    $this->token['oauth_token'] = $request_token['oauth_token_secret'];
-                    $_SESSION['token'] = $this->token;
-                    //print_r($this->token);
-                    header('Location: '.$this->urls['authenticate'].'?oauth_token='.$request_token['oauth_token']);
-                } else {
-                    echo "geht nicht";
+		    if(!isset($this->token['oauth_token_secret'])) {
+		        if(isset($this->token['oauth_token']) && isset($this->token['oauth_verifier'])) {
+		            // get access token
+		            $token = $this->_twitterAccessToken();
+                    // generate identifier
+                    $identifier = md5($token['user_id']);
+                    // try to find existing user data
+                    $user_data = $this->getUserDataPage($identifier);
+                    if($user_data->id) {
+                        $pass = $this->getRandomPassword();
+                        $user = $this->users->get($user_data->sociallogin_user);
+                        $user->pass = $pass;
+                        $user->save();                       
+                        if(($user->id) && ($this->saveUserData($user, $token))) {
+                            $this->session->login($user, $pass);
+                            $this->session->redirect("/");
+                        } else {
+                            return $this->executeDenied();
+                        }
+                    } else {
+                        
+                    }
+		        } else {
+		            // get request token
+    		        $request_token = $this->_twitterRequestToken('http://'.$_SERVER['SERVER_NAME'].$_SERVER['REQUEST_URI']);
+                    if($this->http_info['code'] == 200) {
+                        $this->token['oauth_token'] = $request_token['oauth_token'];
+                        $this->token['oauth_token'] = $request_token['oauth_token_secret'];
+                        $_SESSION['token'] = $this->token;
+                        header('Location: '.$this->urls['authenticate'].'?oauth_token='.$request_token['oauth_token']);
+                    } else {
+                        echo "geht nicht";
+                    }
                 }
 	        } else {
-                echo "nš";
+                echo "nï¿½";
 	        }
 		} else {
-		    throw new WireException('SocialLoginProviderTwitter: Module wasnÕt properly configured.');
+		    throw new WireException('SocialLoginProviderTwitter: Module hasnâ€™t been properly configured.');
 		}
 	}
 	
@@ -93,49 +122,31 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
 			return false;
 		}
 	}
-
-	/**
-	 * Provide roles for users created within this login process
-	 */	
-	public function getUserRoles() {
-		$roles = new PageArray();
-		if(is_array($this->user_roles)) {
-			foreach($this->user_roles as $user_role) {
-				$roles->add($this->roles->get($user_role));
-			}
-		} else {
-			$user_role = null;
-			if(($user_role = $this->roles->get($this->user_roles)) && ($user_role->id)) {
-				$roles->add($user_role);
-			}
-		}
-		return $roles;
-	}
-
-	/**
-	 * Provide login module specific config fields
-	 */
-	public function getConfigFields() {
-		$fields = new InputfieldWrapper();
-		// consumer key
-		$field = $this->modules->get('InputfieldText');
-		$field->name = 'config_consumer_key';
-		$field->label = $this->_('Twitter Consumer Key');
-		$field->description = $this->_('Enter the consumer key you got for your site from dev.twitter.com');
-		$field->value = $this->consumer_key;
-		$fields->add($field);
-		// consumer secret
-		$field = $this->modules->get('InputfieldText');
-		$field->name = 'config_consumer_secret';
-		$field->label = $this->_('Twitter Consumer Secret');
-		$field->description = $this->_('Enter the consumer secret you got for your site from dev.twitter.com');
-		$field->value = $this->consumer_secret;
-		$fields->add($field);
-		return $fields;
-	}	
 	
 	public static function getModuleConfigInputfields(array $data) {
-		return new InputfieldWrapper();
+	    $modules = Wire::getFuel('modules');        
+		$fields = new InputfieldWrapper();
+        // roles
+        $field = ProcessSocialLoginManager::getRoleConfigField($data['user_roles']);
+        if($field->name) {
+            $fields->add($field);
+        }
+        
+        // consumer key
+        $field = $modules->get('InputfieldText');
+        $field->name = 'consumer_key';
+        $field->label = __('Twitter Consumer Key', __FILE__);
+        $field->description = __('Enter the consumer key you got for your site from dev.twitter.com', __FILE__);
+        $field->value = $data['consumer_key'];
+        $fields->add($field);
+        // consumer secret
+        $field = $modules->get('InputfieldText');
+        $field->name = 'consumer_secret';
+        $field->label = __('Twitter Consumer Secret', __FILE__);
+        $field->description = __('Enter the consumer secret you got for your site from dev.twitter.com', __FILE__);
+        $field->value = $data['consumer_secret'];
+        $fields->add($field);
+        return $fields;
 	}
     
     /**
@@ -144,13 +155,13 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
     private function _twitterGetSignature($base_string) {
         $parts = array(
             $this->consumer_secret,
-            (isset($this->token['oauth_token_secret'])) ? $this->token['oauth_token_secret'] : ""
+            (isset($this->token['oauth_token_secret'])) ? $this->token['oauth_token_secret'] : ''
         );
         
         $parts = $this->urlEncode($parts);
         $secret = implode('&', $parts);
         return base64_encode(hash_hmac('sha1', $base_string, $secret, true));
-         
+        
         //$signature = $this->urlEncode(base64_encode(hash_hmac('sha1', $base_string, $this->urlEncode($this->consumer_secret).'&', TRUE)));
         //return $signature;
     }
@@ -188,7 +199,6 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
             //$header_parts['oauth_token'] = '';
         }
         $base_string = $this->_twitterGetBaseString($url, $method, $query); //  count($query)?array_merge($header_parts, $query):$header_parts);
-        echo $base_string;
         $header_parts['oauth_signature'] = $this->_twitterGetSignature($base_string);
         foreach($header_parts as $param => $value) { 
             $header .= $param."=\"".$this->urlEncode($value)."\", ";
@@ -197,14 +207,29 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
         return stripslashes($header);        
     }
     
-    private function _twitterRequestToken($callback_url) {
+    private function _twitterRequestToken($callback_url='obb') {
         $query = array();
-        $response = $this->_twitterOAuthRequest($this->urls['requestToken'], 'GET', $query, $callback_url);
+        if($callback_url) {
+            $query['oauth_callback'] = $callback_url;
+        }
+        $response = $this->_twitterOAuthRequest($this->urls['requestToken'], 'GET', $query);
         echo "<pre>";
         print_r($this->http_info);
         echo "<br />";
         $token = $this->parseParameters($response);
         $this->token = array('oauth_token' => $token['oauth_token'], 'oauth_token_secret' => $token['oauth_token_secret']);
+        return $token;
+    }
+    
+    private function _twitterAccessToken() {
+        $query = array();
+        if($this->token['oauth_verifier']) {
+            $query['oauth_verifier'] = $this->token['oauth_verifier'];
+        }
+        $response = $this->_twitterOAuthRequest($this->urls['accessToken'], 'GET', $query);
+        $token = $this->parseParameters($response);
+        $this->token['oauth_token'] = $token['oauth_token'];
+        $this->token['oauth_token_secret'] = $token['oauth_token_secret'];
         return $token;
     }
     
@@ -215,7 +240,7 @@ class ProcessSocialLoginProviderTwitter extends AbstractSocialLoginProviderAPI {
         return $url;    
     } 
     
-    private function _twitterOAuthRequest($url, $method, $query, $callback_url="oob") {
+    private function _twitterOAuthRequest($url, $method, $query) {
         $url = $this->_twitterFormatRequest($url);
         //$oauth_header = $this->_twitterGetOAuthHeader($url, $method, $query, $callback_url);
         

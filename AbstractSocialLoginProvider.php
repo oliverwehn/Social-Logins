@@ -10,28 +10,24 @@ abstract class AbstractSocialLoginProvider extends Process implements Configurab
 	 */
 	protected $providerName;
 	
-	/**
-	 * provide additional config fields besides roles for manager if needed
-	 */
-	abstract public function getConfigFields();
-	
-	/**
-	 * Provide roles for users created within this login process
-	 */	
-	public function getUserRoles() {
-		$roles = new PageArray();
-		if(is_array($this->user_roles)) {
-			foreach($this->user_roles as $user_role) {
-				$roles->add($this->roles->get($user_role));
-			}
-		} else {
-			$user_role = 0;
-			if(($user_role = $this->roles->get($this->user_roles)) && ($user_role->id)) {
-				$roles->add($user_role);
-			}
-		}
-		return $roles;
-	}
+    /**
+     * Provide roles for users created within this login process
+     */ 
+    private static function _getUserRoles() {
+        $roles = new PageArray();
+        $config = Wire::getFuel('modules')->getModuleConfigData(self::className());
+        if(is_array($config['user_roles'])) {
+            foreach($config['user_roles'] as $user_role) {
+                $roles->add($this->roles->get($user_role));
+            }
+        } else {
+            $user_role = null;
+            if(($user_role = Wire::getFuel('roles')->get($config['user_roles'])) && ($user_role->id)) {
+                $roles->add($user_role);
+            }
+        }
+        return $roles;
+    }
 	
 	/**
 	 * provide fields or buttons for implementing provider in login form
@@ -42,10 +38,98 @@ abstract class AbstractSocialLoginProvider extends Process implements Configurab
 	 * pass on 
 	 */
 	public static function getModuleConfigInputfields(array $data) {
-		$fields = $this->getConfigFields();
+		$fields = new FieldWrapper();
 		return $fields;
 	}
-	
+    
+    /**
+     * create user data page
+     */
+    public function createUserDataPage($user, $identifier) {
+        if($user instanceof User == false) {
+            $user = $this->users->get($user);
+        }
+        if($user->id && is_scalar($identifier)) {        
+            // create user data page
+            $adminPage = $this->fuel('pages')->get($this->config->adminRootPageID);
+            $provider = $adminPage->child("name=setup")->child("name=sociallogin")->child('name='.strtolower($this->providerName));
+            $user_data = new Page($this->templates->get('sociallogin_user'));
+            $user_data->parent = $provider;
+            $user_data->title = 'User '.$user->id;
+            $user_data->name = $this->fuel('sanitizer')->pageName($identifier, $user_data->settings['name']);
+            $user_data->sociallogin_user = $user->id;
+            $user_data->save();
+            if($user_data->id) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    /**
+     * find user data page by identifier
+     */
+    public function getUserDataPage($identifier) {
+        if(is_scalar($identifier)) {
+            $adminPage = $this->fuel('pages')->get($this->config->adminRootPageID);
+            $provider = $adminPage->child("name=setup")->child("name=sociallogin")->child('name='.strtolower($this->providerName));
+            $user_data = $provider->child('name='.$identifier);
+            if($user_data->id) {
+                return $user_data;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    /**
+     * store any user data
+     */
+    public function saveUserData($user, array $data) {
+        if($user instanceof User == false) {
+            $user = $this->users->get($user);
+        }
+        if($user->id) {
+            // get user data page
+            $user_data = $this->pages->get('template=sociallogin_user, sociallogin_user='.$user->id);
+            if(!$user_data->id) {
+                throw new WireException($this->_('WasnÕt able to load user data page.')); // Error message on creation of user data page
+            } else {
+                $json = count($data) ? wireEncodeJSON($data, true) : '{}';
+                $user_data->sociallogin_user_data = $json;
+                $user_data->save();
+            }
+            return true;            
+        } else {
+            return false;
+        }
+    }
+    /**
+     * load user data
+     */
+	public function getUserData($user) {
+        if($user instanceof User == false) {
+            $user = $this->users->get($user);
+        }
+        if($user->id) {
+            $adminPage = $this->fuel('pages')->get($this->config->adminRootPageID);
+            $provider = $adminPage->child("name=setup")->child("name=sociallogin")->child('name='.strtolower($this->providerName));
+            $user_data = $provider->child('sociallogin_user='.$user->id);
+            return wireDecodeJSON($user_data->sociallogin_user_data);      
+        } else {
+            return false;
+        }	    
+	}
+
+    public function getRandomPassword($length=12) {
+        if(!is_numeric($length)) {
+            $length = 12;
+        } 
+        return mb_substr(base64_encode(date("Y.m.d H:i:s")), 0, $length);
+    }
 
 }
 
@@ -85,8 +169,7 @@ abstract class AbstractSocialLoginProviderAPI extends AbstractSocialLoginProvide
             CURLOPT_SSL_VERIFYPEER => FALSE,
             CURLOPT_RETURNTRANSFER => TRUE,
             CURLOPT_HEADERFUNCTION => array($this, 'getHeader'),
-            CURLOPT_HEADER => FALSE,      
-            CURLOPT_POSTFIELDS => ''
+            CURLOPT_HEADER => FALSE
         );
         foreach($defaults as $index=>$option) {
             if(!array_key_exists($index, $options)) {
@@ -111,8 +194,7 @@ abstract class AbstractSocialLoginProviderAPI extends AbstractSocialLoginProvide
         }  
         $this->http_info['code'] = curl_getinfo($ci, CURLINFO_HTTP_CODE);
         $this->http_info['curl_info'] = curl_getinfo($ci);
-        curl_close ($ci); 
-        echo "(".$response.")";
+        curl_close ($ci);
         return $response;
     }   
     /**

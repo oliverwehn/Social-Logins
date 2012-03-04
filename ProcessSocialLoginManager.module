@@ -41,7 +41,7 @@ class ProcessSocialLoginManager extends ProcessPageType {
 	 *
 	 */
 	public function init() {
-
+	    
 	}
 	
 	/**
@@ -49,22 +49,15 @@ class ProcessSocialLoginManager extends ProcessPageType {
 	 */
 	public function ___executeEdit() {
 		if((is_numeric($this->input->get->id)) && ($module_page = $this->pages->get($this->input->get->id))) {
-			$module = $this->modules->get($module_page->process);
 			$this->fuel->breadcrumbs->add(new Breadcrumb('../', $this->page->title));
 			$this->page->title .= ": ".$module_page->title; 
 			$form = $this->modules->get('InputfieldForm');
 			$form->action = "../save/?id=".$this->input->get->id;
 			$form->attr('method', 'post');
-			// offer user roles to choose
-			$roles = $this->fields->get('roles');
-			$field = $roles->getInputfield($this->page, $roles);
-			$field->label = $this->_("User roles");
-			$field->description = $this->_("Roles given to users created for this type of login by default");
-			$field->value = $module->getUserRoles();
-			$field->name = 'config_user_roles';
-			$form->add($field);
 			// let login module add specific input fields to form
-			if($fields = $module->getConfigFields()) {
+			$config = $this->modules->getModuleConfigData($module_page->process);
+            $module = $this->modules->get($module_page->process);
+			if($fields = $module->getModuleConfigInputfields($config)) {
 				foreach($fields as $field) {
 					if($field instanceof Inputfield) {
 						$form->add($field);
@@ -83,6 +76,29 @@ class ProcessSocialLoginManager extends ProcessPageType {
 			$this->session->redirect("../");
 		}
 	}
+    
+    public static function getRoleConfigField($user_roles) {
+            // prepare roles
+            $roles = Wire::getFuel('roles');
+            if(!is_array($user_roles)) {
+                $user_roles = explode("|", $user_roles);
+            }
+            $value = new PageArray();
+            if(is_array($user_roles)) {
+                foreach($user_roles as $role) {
+                    $value->add($roles->get($role));
+                }
+            }
+            // offer user roles to choose
+            $roles_field = Wire::getFuel('fields')->get('roles');
+            $field = $roles_field->getInputfield(Wire::getFuel('page'), $roles_field);
+            $field->label = __("User roles", __FILE__);
+            $field->description = __("Roles given to users created for this type of login by default", __FILE__);
+            $field->value = $value;
+            $field->name = 'user_roles';
+            return $field;        
+    } 
+    
 
 	/**
 	 * Save config data
@@ -90,14 +106,15 @@ class ProcessSocialLoginManager extends ProcessPageType {
 	public function ___executeSave() {
 		if($this->input->get->id) {
 			$config = array();
-			if(!is_array($this->input->post->config_user_roles)) {
-				$config['user_roles'] = array();
+            
+			if((!array_key_exists('user_roles', $config)) || (!is_array($config['user_roles']))) {
+				$config['user_roles'] = "";
+			} else {
+			    $config['user_roles'] = implode("|", $config['user_roles']);
 			}
 			$match = array();
 			foreach($this->input->post as $name => $value) {
-				if(preg_match("#^config_([a-z0-9_\[\]]+)$#", $name, $match)) {
-					$config[$match[1]] = $value;
-				}
+				$config[$name] = $value;
 			}
 			$this->modules->saveModuleConfigData($this->pages->get($this->input->get->id)->process, $config);
 			$this->message($this->_("Config data successfully saved"));
@@ -199,7 +216,7 @@ class ProcessSocialLoginManager extends ProcessPageType {
 		$field->flags = Field::flagSystem;
 		$field->save();
 		
-		// create the fieldgroup to be used by the language template
+		// create the fieldgroup to be used by the login template
 		$fieldgroup = new Fieldgroup(); 
 		$fieldgroup->name = 'sociallogin';
 		$fieldgroup->add($this->fields->get('title')); 
@@ -235,7 +252,7 @@ class ProcessSocialLoginManager extends ProcessPageType {
 		$setupPage = $adminPage->child("name=setup"); 
 		if(!$setupPage->id) throw new WireException("Unable to locate {$adminPage->path}setup/"); 
 
-		// create the languages parent page
+		// create the manager parent page
 		$manager = new Page();
 		$manager->parent = $setupPage; 
 		$manager->template = $this->templates->get('admin'); 
@@ -246,8 +263,54 @@ class ProcessSocialLoginManager extends ProcessPageType {
 		$manager->sort = $setupPage->numChildren; 
 		$manager->save();
 
-		$configData['socialloginPageID'] = $manager->id; 
+		$configData['socialloginPageID'] = $manager->id;
+        
+        /**
+         * Create user template
+         */ 
+        // create template
+        $template = new Template(); 
+        $template->name = 'sociallogin_user';
+                
+        // create the fieldgroup to be used by the user template
+        $fieldgroup = new Fieldgroup(); 
+        $fieldgroup->name = $template->name;
+        $fieldgroup->add($this->fields->get('title')); 
 
+        // create sociallogin_user field
+        $field = new Field();
+        $field->type = $modules->get('FieldtypePage');
+        $field->name = $template->name;
+        $field->label = 'Social Login: User Page Reference';
+        $field->flags = Field::flagSystem;
+        $field->template_id = $templates->get('user')->id;
+        $field->derefAdPage = 1; 
+        $field->save();
+        $fieldgroup->add($field);         
+        $this->message("Created field: sociallogin_user");
+        
+        // create sociallogin_user_data field
+        $field = new Field();
+        $field->type = $this->modules->get('FieldtypeTextarea');
+        $field->name = 'sociallogin_user_data';
+        $field->label = 'Social Login: User data';
+        $field->description = 'Stores the login process';
+        $field->flags = Field::flagSystem;
+        $field->save();        
+        $fieldgroup->add($field);
+        $this->message("Created field: sociallogin_user_data");
+        
+        $fieldgroup->save();
+        
+        $template->fieldgroup = $fieldgroup;  
+        $template->slashUrls = 1; 
+        $template->pageLabelField = 'name';
+        $template->nameContentTab = 1; 
+        $template->flags = Template::flagSystem;
+        $template->allowUrlSegments = 1; 
+        $template->save();
+        $this->message("Created Template: sociallogin_user");
+        
 		$this->message("Social Login Installed! Click to the 'Setup' menu to manage Social Login Providers.");
 		$default = $this->modules->get('ProcessSocialLoginProviderDefault');
 
@@ -290,6 +353,29 @@ class ProcessSocialLoginManager extends ProcessPageType {
             $field->save();
 	        $this->fields->delete($field);
         }
+        
+        $template = $this->templates->get('sociallogin_user');
+        if($template->id) {
+            $template->flags = Template::flagSystemOverride;
+            $template->flags = 0;
+            $template->save();
+            $temp_name = $template->name;
+            $this->templates->delete($template);
+            $this->fieldgroups->delete($this->fieldgroups->get($temp_name));
+        }
+        
+        $fields = array(
+            $this->fields->get('sociallogin_user'),
+            $this->fields->get('sociallogin_user_data')
+            );
+        foreach($fields as $field) {
+            if($field->name) {
+                $field->flags = Field::flagSystemOverride;
+                $field->flags = 0;
+                $field->save();
+                $this->fields->delete($field);
+            }
+        }        
 		
 		return parent::___uninstall();
 	}
